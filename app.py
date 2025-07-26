@@ -3,109 +3,123 @@ import requests
 from datetime import datetime
 
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d", "1w"]
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT","LTCUSDT","TRXUSDT","SOLUSDT","XRPUSDT","ADAUSDT","BCHUSDT"]
+SHORT_TIMEFRAMES = ["5m", "15m", "30m", "1h"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "LTCUSDT","BCHUSDT","XRPUSDT","SOLUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","ONDOUSDT","HBARUSDT", "BNBUSDT"]
 NTFY_URL = "https://ntfy.sh/3lvys"
+SLEEP_INTERVAL = 300  # 5 minutes
+CLOSE_TO_MA_PERCENT = 0.5  # porcentaje permitido para estar "cerca" del MA20
 
-# Obtener velas desde Binance
+
 def get_klines(symbol, interval, limit=21):
     url = "https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": limit
-    }
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
     response = requests.get(url, params=params)
     response.raise_for_status()
     return response.json()
 
-# Tendencia del precio
-def get_price_trend(symbol, interval):
-    try:
-        candles = get_klines(symbol, interval, limit=2)
-        close1 = float(candles[-2][4])
-        close2 = float(candles[-1][4])
-        if close2 > close1:
-            return "up"
-        elif close2 < close1:
-            return "down"
-        else:
-            return "flat"
-    except Exception as e:
-        print(f"[{symbol} - {interval} - PRICE] Error: {e}")
-        return None
 
-# Tendencia de la MA20
-def get_ma20_trend(symbol, interval):
-    try:
-        candles = get_klines(symbol, interval, limit=21)
-        closes = [float(c[4]) for c in candles]
-        ma_prev = sum(closes[-21:-1]) / 20
-        ma_curr = sum(closes[-20:]) / 20
-        if ma_curr > ma_prev:
-            return "up"
-        elif ma_curr < ma_prev:
-            return "down"
-        else:
-            return "flat"
-    except Exception as e:
-        print(f"[{symbol} - {interval} - MA20] Error: {e}")
-        return None
+def get_price_trend(candles):
+    close1 = float(candles[-2][4])
+    close2 = float(candles[-1][4])
+    if close2 > close1:
+        return "up"
+    elif close2 < close1:
+        return "down"
+    else:
+        return "flat"
 
-# Verifica alineación de tendencia de precio y calcula alineación de MA20
-def check_price_alignment(symbol):
-    price_trends = []
-    ma_trends = []
+
+def get_ma20_trend(candles):
+    closes = [float(c[4]) for c in candles[-21:]]
+    ma_now = sum(closes[1:]) / 20
+    ma_prev = sum(closes[:-1]) / 20
+    if ma_now > ma_prev:
+        return "rising"
+    elif ma_now < ma_prev:
+        return "falling"
+    else:
+        return "flat"
+
+
+def is_close_to_ma20(candles, percent_threshold=0.5):
+    closes = [float(c[4]) for c in candles[-21:]]
+    ma = sum(closes) / 20
+    current_price = float(candles[-1][4])
+    diff_percent = abs(current_price - ma) / ma * 100
+    return diff_percent <= percent_threshold
+
+
+def analyze_symbol(symbol):
+    price_directions = []
+    ma20_directions = []
+    close_to_ma = []
 
     for tf in TIMEFRAMES:
-        price_trend = get_price_trend(symbol, tf)
-        ma_trend = get_ma20_trend(symbol, tf)
+        try:
+            candles = get_klines(symbol, tf, 21)
+            price_trend = get_price_trend(candles)
+            ma20_trend = get_ma20_trend(candles)
 
-        if price_trend is None or price_trend == "flat":
-            return None, None  # Cancelar si el precio es plano o error
+            price_directions.append(price_trend)
+            ma20_directions.append(ma20_trend)
 
-        price_trends.append(price_trend)
-        ma_trends.append(ma_trend)
+            if tf in SHORT_TIMEFRAMES:
+                close_to = is_close_to_ma20(candles, CLOSE_TO_MA_PERCENT)
+                close_to_ma.append((tf, close_to))
+        except Exception as e:
+            print(f"[{symbol}-{tf}] Error: {e}")
+            return None
 
-    # Comprobar si el precio tiene misma dirección en todos los marcos
-    if all(t == price_trends[0] for t in price_trends):
-        price_direction = price_trends[0]
-        # Verificar si la MA20 también coincide en la misma dirección
-        if all(t == price_direction for t in ma_trends):
-            return price_direction, True
-        else:
-            return price_direction, False
+    # Verificar si todas las direcciones de precio coinciden
+    if all(d == price_directions[0] for d in price_directions if d != "flat"):
+        aligned_trend = price_directions[0]
+        info = {
+            "symbol": symbol,
+            "trend": aligned_trend,
+            "ma20_trend": ma20_directions,
+            "ma20_agreement": all(m == ma20_directions[0] for m in ma20_directions if m != "flat"),
+            "ma20_status": ma20_directions[0],
+            "close_to_ma20": [tf for tf, close in close_to_ma if close]
+        }
+        return info
+    return None
 
-    return None, None
 
-# Enviar notificación
-def send_notification(symbol, direction, ma20_confirma):
-    dir_str = "📈 ALCISTA" if direction == "up" else "📉 BAJISTA"
-    ma_note = "✅ MA20 confirmada" if ma20_confirma else "❌ MA20 sin confirmar"
-    message = f"🔔 {symbol}: Tendencia {dir_str} en el precio en todos los marcos de tiempo\n{ma_note}"
+def send_notification(info):
+    trend_str = "📈 ALCISTA" if info["trend"] == "up" else "📉 BAJISTA"
+    message = f"🔔 {info['symbol']} tendencia {trend_str} en TODOS los marcos de tiempo.\n"
+
+    if info["ma20_agreement"]:
+        ma_str = "↗️ RISING" if info["ma20_status"] == "rising" else "↘️ FALLING"
+        message += f"✔️ MA20 también alineada: {ma_str}.\n"
+
+    if info["close_to_ma20"]:
+        tf_str = ", ".join(info["close_to_ma20"])
+        message += f"💡 Precio cerca del MA20 en: {tf_str}.\n"
+
     try:
-        response = requests.post(NTFY_URL, data=message.encode("utf-8"))
-        if response.status_code == 200:
-            print(f"✅ Notificación enviada: {message}")
+        r = requests.post(NTFY_URL, data=message.encode("utf-8"))
+        if r.status_code == 200:
+            print(f"✅ Notificación enviada:\n{message}")
         else:
-            print(f"⚠️ Error al enviar notificación: {response.status_code}")
+            print(f"⚠️ Error al enviar notificación: {r.status_code}")
     except Exception as e:
-        print(f"⚠️ Error al enviar notificación: {e}")
+        print(f"⚠️ Excepción al enviar notificación: {e}")
 
-# Monitor principal
+
 def monitor():
-    print("📡 Iniciando monitoreo con tendencia de precio + info MA20...")
+    print("📡 Iniciando monitoreo...")
     while True:
         print(f"\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         for symbol in SYMBOLS:
-            trend, ma20_match = check_price_alignment(symbol)
-            if trend:
-                dir_str = "📈 ALCISTA" if trend == "up" else "📉 BAJISTA"
-                ma_txt = "✅ MA20 confirmada" if ma20_match else "❌ MA20 sin confirmar"
-                print(f"🔔 ALERTA: {symbol} tiene tendencia {dir_str} en todos los marcos. {ma_txt}")
-                send_notification(symbol, trend, ma20_match)
+            result = analyze_symbol(symbol)
+            if result:
+                send_notification(result)
             else:
-                print(f"⏳ {symbol} sin alineación clara de tendencia de precio.")
-        time.sleep(300)
+                print(f"⏳ {symbol} sin alineación clara de tendencia.")
+        time.sleep(SLEEP_INTERVAL)
+
 
 if __name__ == "__main__":
     monitor()
+
