@@ -3,20 +3,17 @@ import requests
 from datetime import datetime
 
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d", "1w"]
-SHORT_TIMEFRAMES = ["5m", "15m", "30m", "1h"]
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "LTCUSDT","BCHUSDT","XRPUSDT","SOLUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","ONDOUSDT","HBARUSDT", "BNBUSDT"]
+NEAR_MA_TFS = ["5m", "15m", "30m", "1h"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT","SOLUSDT","LTCUSDT","BCHUSDT","ADAUSDT","XRPUSDT","TRXUSDT","DOGEUSDT","HBARUSDT","ONDOUSDT","APTUSDT"]
 NTFY_URL = "https://ntfy.sh/3lvys"
-SLEEP_INTERVAL = 300  # 5 minutes
-CLOSE_TO_MA_PERCENT = 0.5  # porcentaje permitido para estar "cerca" del MA20
+NEAR_MA_THRESHOLD = 0.01  # 1%
 
-
-def get_klines(symbol, interval, limit=21):
+def get_klines(symbol, interval, limit=50):
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol, "interval": interval, "limit": limit}
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    return response.json()
-
+    r = requests.get(url, params=params)
+    r.raise_for_status()
+    return r.json()
 
 def get_price_trend(candles):
     close1 = float(candles[-2][4])
@@ -25,100 +22,96 @@ def get_price_trend(candles):
         return "up"
     elif close2 < close1:
         return "down"
-    else:
-        return "flat"
-
+    return "flat"
 
 def get_ma20_trend(candles):
-    closes = [float(c[4]) for c in candles[-21:]]
-    ma_now = sum(closes[1:]) / 20
-    ma_prev = sum(closes[:-1]) / 20
-    if ma_now > ma_prev:
-        return "rising"
-    elif ma_now < ma_prev:
-        return "falling"
-    else:
-        return "flat"
+    closes = [float(c[4]) for c in candles]
+    ma1 = sum(closes[-21:-1]) / 20
+    ma2 = sum(closes[-20:]) / 20
+    if ma2 > ma1:
+        return "up"
+    elif ma2 < ma1:
+        return "down"
+    return "flat"
 
+def is_price_near_ma20(candles):
+    closes = [float(c[4]) for c in candles]
+    ma20 = sum(closes[-20:]) / 20
+    last_price = closes[-1]
+    deviation = abs(last_price - ma20) / ma20
+    return deviation <= NEAR_MA_THRESHOLD
 
-def is_close_to_ma20(candles, percent_threshold=0.5):
-    closes = [float(c[4]) for c in candles[-21:]]
-    ma = sum(closes) / 20
-    current_price = float(candles[-1][4])
-    diff_percent = abs(current_price - ma) / ma * 100
-    return diff_percent <= percent_threshold
+def detect_retracement(candles):
+    closes = [float(c[4]) for c in candles]
+    recent = closes[-20:]
+    highest = max(recent)
+    lowest = min(recent)
+    current = recent[-1]
 
+    if current > lowest and current < highest:
+        if (highest - lowest) == 0:
+            return False
+        retracement = (current - lowest) / (highest - lowest)
+        if 0.4 <= retracement <= 0.6:
+            return True
+    return False
 
 def analyze_symbol(symbol):
     price_directions = []
-    ma20_directions = []
-    close_to_ma = []
+    ma_directions = []
+    near_ma_tfs = []
+    retracement_found = False
 
     for tf in TIMEFRAMES:
         try:
-            candles = get_klines(symbol, tf, 21)
-            price_trend = get_price_trend(candles)
-            ma20_trend = get_ma20_trend(candles)
+            candles = get_klines(symbol, tf, limit=50)
+            price_dir = get_price_trend(candles)
+            ma_dir = get_ma20_trend(candles)
 
-            price_directions.append(price_trend)
-            ma20_directions.append(ma20_trend)
+            if tf in NEAR_MA_TFS and is_price_near_ma20(candles):
+                near_ma_tfs.append(tf)
 
-            if tf in SHORT_TIMEFRAMES:
-                close_to = is_close_to_ma20(candles, CLOSE_TO_MA_PERCENT)
-                close_to_ma.append((tf, close_to))
+            if tf == "1h":  # Usamos 1h para revisar retroceso
+                if detect_retracement(candles):
+                    retracement_found = True
+
+            price_directions.append(price_dir)
+            ma_directions.append(ma_dir)
         except Exception as e:
-            print(f"[{symbol}-{tf}] Error: {e}")
-            return None
+            print(f"[{symbol} - {tf}] Error: {e}")
+            return
 
-    # Verificar si todas las direcciones de precio coinciden
     if all(d == price_directions[0] for d in price_directions if d != "flat"):
-        aligned_trend = price_directions[0]
-        info = {
-            "symbol": symbol,
-            "trend": aligned_trend,
-            "ma20_trend": ma20_directions,
-            "ma20_agreement": all(m == ma20_directions[0] for m in ma20_directions if m != "flat"),
-            "ma20_status": ma20_directions[0],
-            "close_to_ma20": [tf for tf, close in close_to_ma if close]
-        }
-        return info
-    return None
+        direction = price_directions[0]
+        message = f"🔔 {symbol} tendencia 📊 {direction.upper()} en TODOS los marcos\n"
 
+        if all(m == ma_directions[0] for m in ma_directions if m != "flat"):
+            message += f"✅ MA20 también en tendencia {ma_directions[0]}\n"
 
-def send_notification(info):
-    trend_str = "📈 ALCISTA" if info["trend"] == "up" else "📉 BAJISTA"
-    message = f"🔔 {info['symbol']} tendencia {trend_str} en TODOS los marcos de tiempo.\n"
+        if near_ma_tfs:
+            message += f"📍 Precio cerca del MA20 en: {', '.join(near_ma_tfs)}\n"
 
-    if info["ma20_agreement"]:
-        ma_str = "↗️ RISING" if info["ma20_status"] == "rising" else "↘️ FALLING"
-        message += f"✔️ MA20 también alineada: {ma_str}.\n"
+        if retracement_found:
+            message += "🔄 Retroceso detectado de 40% a 60% desde el último movimiento\n"
 
-    if info["close_to_ma20"]:
-        tf_str = ", ".join(info["close_to_ma20"])
-        message += f"💡 Precio cerca del MA20 en: {tf_str}.\n"
-
-    try:
-        r = requests.post(NTFY_URL, data=message.encode("utf-8"))
-        if r.status_code == 200:
-            print(f"✅ Notificación enviada:\n{message}")
-        else:
-            print(f"⚠️ Error al enviar notificación: {r.status_code}")
-    except Exception as e:
-        print(f"⚠️ Excepción al enviar notificación: {e}")
-
+        try:
+            r = requests.post(NTFY_URL, data=message.encode("utf-8"))
+            if r.status_code == 200:
+                print(f"✅ Notificación enviada: {symbol}")
+            else:
+                print(f"⚠️ Error al notificar {symbol}: {r.status_code}")
+        except Exception as e:
+            print(f"⚠️ Error al notificar {symbol}: {e}")
+    else:
+        print(f"⏳ {symbol}: Sin alineación clara de precios.")
 
 def monitor():
-    print("📡 Iniciando monitoreo...")
+    print("🚀 Iniciando monitoreo...")
     while True:
         print(f"\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         for symbol in SYMBOLS:
-            result = analyze_symbol(symbol)
-            if result:
-                send_notification(result)
-            else:
-                print(f"⏳ {symbol} sin alineación clara de tendencia.")
-        time.sleep(SLEEP_INTERVAL)
-
+            analyze_symbol(symbol)
+        time.sleep(300)  # Espera 5 minutos
 
 if __name__ == "__main__":
     monitor()
