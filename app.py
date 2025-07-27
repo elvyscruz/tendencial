@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 BASE_URL = "https://api.binance.com/api/v3/klines"
-NOTIFY_URL = "https://ntfy.sh/3lvys"
+NOTIFY_URL = "https://ntfy.sh/tendencial"
 SYMBOLS = ["BTCUSDT", "ETHUSDT","LTCUSDT","BCHUSDT","SOLUSDT","ADAUSDT","HBARUSDT","BNBUSDT","TRXUSDT","HBARUSDT"]
 INTERVALS = {
     "5m": "5m",
