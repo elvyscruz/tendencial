@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 BASE_URL = "https://api.binance.com/api/v3/klines"
 NOTIFY_URL = "https://ntfy.sh/3lvys"
-SYMBOLS = ["BTCUSDT", "ETHUSDT","BNBUSDT","LTCUSDT","BCHUSDT","XRPUSDT","SOLUSDT","DOGEUSDT","ADAUSDT","HBARUSDT","TRXUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT","LTCUSDT","BCHUSDT","SOLUSDT","ADAUSDT","HBARUSDT","BNBUSDT","TRXUSDT","HBARUSDT"]
 INTERVALS = {
     "5m": "5m",
     "15m": "15m",
