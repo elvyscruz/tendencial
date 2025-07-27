@@ -71,7 +71,7 @@ def send_notification(symbol, trend, ma_trends, near_ma_times, retrace_times, op
     message = f"{emoji} {symbol} {trend.upper()} trend on all TFs\n"
 
     if ma_trends and all(mt == ma_trends[0] for mt in ma_trends):
-        message += f"🧠 MA20 {ma_trends[0]}\n"
+        message += f"💹 MA20 {ma_trends[0]}\n"
 
     if near_ma_times:
         message += f"📍Near MA20: {', '.join(near_ma_times)}\n"
