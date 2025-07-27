@@ -97,10 +97,10 @@ Puedes ajustar los siguientes parámetros directamente en `app.py`:
 
 Contribuciones son bienvenidas. Puedes reportar errores, sugerir mejoras o enviar pull requests. 
 
---
+---
 
 ## ✍️ Autor
 
-Desarrollado por \[elvys cruz] como herramienta de análisis técnico automatizado para criptomonedas.
+Desarrollado por \[elvys cruz] en Dominican Republic 🇩🇴
 
 
