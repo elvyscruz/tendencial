@@ -1,155 +1,152 @@
 import requests
 import time
+import datetime
 import numpy as np
-from datetime import datetime, timedelta
 
-BASE_URL = "https://api.binance.com/api/v3/klines"
-NOTIFY_URL = "https://ntfy.sh/tendencial"
-SYMBOLS = ["BTCUSDT", "ETHUSDT","LTCUSDT","BCHUSDT","SOLUSDT","ADAUSDT","HBARUSDT","BNBUSDT","TRXUSDT","HBARUSDT"]
-INTERVALS = {
-    "5m": "5m",
-    "15m": "15m",
-    "30m": "30m",
-    "1h": "1h",
-    "4h": "4h",
-    "1d": "1d",
-    "1w": "1w"
-}
-MA_PROXIMITY_TFS = {"5m", "15m", "30m", "1h"}
-SLEEP_SECONDS = 300  # 5 minutos
-RETRACE_MIN = 0.4
-RETRACE_MAX = 0.6
+SYMBOLS = ["BTCUSDT", "ETHUSDT","LTCUSDT","BCHUSDT","XRPUSDT","SOLUSDT","BNBUSDT","TRXUSDT","HBARUSDT"]
+TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
+MA_PERIOD = 20
 
-def fetch_candles(symbol, interval, limit=50):
-    try:
-        params = {"symbol": symbol, "interval": interval, "limit": limit}
-        response = requests.get(BASE_URL, params=params, timeout=10)
-        data = response.json()
-        return data if isinstance(data, list) else []
-    except Exception as e:
-        print(f"[{symbol}][{interval}] Error fetching candles: {e}")
-        return []
+def get_candles(symbol, interval, limit=100):
+    url = f"https://api.binance.com/api/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    response = requests.get(url)
+    return response.json()
 
-def get_trend_and_ma(candles):
-    try:
-        closes = np.array([float(c[4]) for c in candles])
-        opens = np.array([float(c[1]) for c in candles])
-        volumes = np.array([float(c[5]) for c in candles])
+def get_trend_and_ma20(candles):
+    closes = [float(c[4]) for c in candles if len(c) > 4]
+    if len(closes) < MA_PERIOD:
+        return None, None, None
+    closes_array = np.array(closes)
+    ma20 = np.mean(closes_array[-MA_PERIOD:])
+    ma_trend = 'rising' if ma20 > np.mean(closes_array[-MA_PERIOD*2:-MA_PERIOD]) else 'falling'
+    trend = 'up' if closes_array[-1] > closes_array[-2] else 'down'
+    return trend, ma20, ma_trend
 
-        if len(closes) < 21:
-            return None
+def is_close_to_ma(current_price, ma):
+    return abs(current_price - ma) / ma < 0.01  # within 1%
 
-        trend = "up" if closes[-1] > closes[0] else "down"
-        ma20 = np.mean(closes[-20:])
-        ma_trend = "rising" if ma20 > np.mean(closes[-40:-20]) else "falling"
+def detect_retrace(candles):
+    highs = [float(c[2]) for c in candles]
+    lows = [float(c[3]) for c in candles]
+    peak = max(highs)
+    bottom = min(lows)
+    last_close = float(candles[-1][4])
+    drop = (peak - last_close) / (peak - bottom + 1e-9)
+    return 0.4 <= drop <= 0.6
 
-        proximity = abs(closes[-1] - ma20) / ma20 < 0.01
+def detect_contrary_bars(candles, trend):
+    colors = []
+    for c in candles[-3:]:
+        open_price = float(c[1])
+        close_price = float(c[4])
+        colors.append('green' if close_price > open_price else 'red')
+    if trend == 'up':
+        return all(c == 'red' for c in colors)
+    else:
+        return all(c == 'green' for c in colors)
 
-        # Retroceso
-        max_price = np.max(closes[:-1])
-        min_price = np.min(closes[:-1])
-        retrace = 0
-        if trend == "up":
-            retrace = (max_price - closes[-1]) / (max_price - min_price) if max_price > min_price else 0
-        else:
-            retrace = (closes[-1] - min_price) / (max_price - min_price) if max_price > min_price else 0
+def is_doji(candle):
+    open_price = float(candle[1])
+    close_price = float(candle[4])
+    return abs(open_price - close_price) < 0.1 * (float(candle[2]) - float(candle[3]))
 
-        retrace_ok = RETRACE_MIN <= retrace <= RETRACE_MAX
+def is_narrow_range(candles):
+    ranges = [float(c[2]) - float(c[3]) for c in candles[-5:]]
+    return ranges[-1] < np.mean(ranges[:-1])
 
-        # Últimas 3 velas contra tendencia (retroceso)
-        last_3 = candles[-3:]
-        retrace_bars = 0
-        for c in last_3:
-            o, h, l, cl = float(c[1]), float(c[2]), float(c[3]), float(c[4])
-            if trend == "up" and cl < o:
-                retrace_bars += 1
-            if trend == "down" and cl > o:
-                retrace_bars += 1
+def has_high_volume(candle, volume_list):
+    vol = float(candle[5])
+    avg_vol = np.mean([float(v) for v in volume_list[-20:]])
+    return vol > avg_vol * 1.5
 
-        # Doji / Narrow Range Bar
-        last_bar = candles[-1]
-        o, h, l, cl = float(last_bar[1]), float(last_bar[2]), float(last_bar[3]), float(last_bar[4])
-        body = abs(cl - o)
-        range_ = h - l
-        doji = body / range_ < 0.2 if range_ > 0 else False
+def low_spread(candle):
+    return (float(candle[2]) - float(candle[3])) / float(candle[4]) < 0.0015
 
-        # Volumen alto
-        vol = volumes[-1]
-        vol_mean = np.mean(volumes[-20:])
-        high_volume = vol > vol_mean * 1.5
-
-        # Low spread (solo para 5m)
-        low_spread = range_ / cl < 0.005 if cl > 0 else False
-
-        return {
-            "trend": trend,
-            "ma20": ma20,
-            "ma_trend": ma_trend,
-            "proximity": proximity,
-            "retrace_ok": retrace_ok,
-            "retrace_bars": retrace_bars >= 3,
-            "doji": doji,
-            "high_volume": high_volume,
-            "low_spread": low_spread
-        }
-    except Exception as e:
-        print(f"Error in trend/MA calculation: {e}")
-        return None
+def get_support_resistance(candles):
+    closes = np.array([float(c[4]) for c in candles])
+    sr_levels = {
+        "support": round(np.min(closes[-30:]), 2),
+        "resistance": round(np.max(closes[-30:]), 2)
+    }
+    return sr_levels
 
 def analyze_symbol(symbol):
-    print(f"\n🔍 Checking {symbol} at {datetime.now().strftime('%H:%M:%S')}")
-    all_trends = []
-    ma_agreement = []
-    proximity_list = []
-    extra_info = []
+    trends = []
+    same_trend = None
+    ma20_info = []
+    close_to_ma20 = []
+    retrace = False
+    contrarian_bars = []
+    extra_signals = []
+    support_resist = []
 
-    for tf_name, interval in INTERVALS.items():
-        candles = fetch_candles(symbol, interval)
-        if not candles or len(candles) < 21:
-            print(f"⚠️  Not enough data for {symbol} - {interval}")
-            return
+    for tf in TIMEFRAMES:
+        candles = get_candles(symbol, tf)
+        if not candles or len(candles) < MA_PERIOD:
+            continue
 
-        res = get_trend_and_ma(candles)
-        if not res:
-            print(f"⚠️  Failed analysis for {symbol} - {interval}")
-            return
+        trend, ma20, ma_trend = get_trend_and_ma20(candles)
+        if trend is None:
+            continue
+        trends.append(trend)
 
-        all_trends.append(res["trend"])
-        ma_agreement.append(res["ma_trend"])
-        if tf_name in MA_PROXIMITY_TFS and res["proximity"]:
-            proximity_list.append(tf_name)
+        if tf in ["5m", "15m", "30m", "1h"]:
+            current_price = float(candles[-1][4])
+            if is_close_to_ma(current_price, ma20):
+                close_to_ma20.append(tf)
 
-        if res["retrace_ok"]:
-            extra_info.append(f"🔁 Retrace {tf_name}")
-        if res["retrace_bars"]:
-            extra_info.append(f"🕯️ Retro bars {tf_name}")
-        if res["doji"]:
-            extra_info.append(f"🤏 Doji {tf_name}")
-        if res["high_volume"]:
-            extra_info.append(f"📈 Vol+ {tf_name}")
-        if tf_name == "5m" and res["low_spread"]:
-            extra_info.append(f"💧 Low Spread")
+        if tf == "1h":
+            retrace = detect_retrace(candles)
 
-    if len(set(all_trends)) == 1:
-        trend = all_trends[0]
-        direction = "📈 UP" if trend == "up" else "📉 DOWN"
-        ma_confirm = "✅ MA20 OK" if len(set(ma_agreement)) == 1 else "⚠️ MA20 Mixed"
-        ma_close = f"📍Near MA20: {', '.join(proximity_list)}" if proximity_list else ""
-        extras = " | ".join(extra_info)
+        if detect_contrary_bars(candles, trend):
+            contrarian_bars.append(tf)
 
-        msg = f"{symbol} {direction}\n{ma_confirm}\n{ma_close}\n{extras}".strip()
-        print(f"🚨 ALERT: {msg}")
-        requests.post(NOTIFY_URL, data=msg.encode("utf-8"))
+        if tf in ["5m", "15m", "30m"]:
+            if is_doji(candles[-1]):
+                extra_signals.append(f"Doji on {tf}")
+            if is_narrow_range(candles):
+                extra_signals.append(f"Narrow bar on {tf}")
+            if has_high_volume(candles[-1], [c[5] for c in candles]):
+                extra_signals.append(f"High volume on {tf}")
+
+        if tf == "5m" and low_spread(candles[-1]):
+            extra_signals.append("Low spread on 5m")
+
+        if tf in ["4h", "1d"]:
+            sr = get_support_resistance(candles)
+            support_resist.append((tf, sr))
+
+    if len(set(trends)) == 1:
+        direction = trends[0]
+        emojis = {'up': '📈', 'down': '📉'}
+        msg = f"{emojis[direction]} {symbol} trending {direction.upper()} in all timeframes"
+
+        if close_to_ma20:
+            msg += f" | Near MA20 on: {', '.join(close_to_ma20)} 🟡"
+
+        if retrace:
+            msg += " | 🔁 40–60% Retrace"
+
+        if contrarian_bars:
+            msg += f" | 🔻 Contrary candles on: {', '.join(contrarian_bars)}"
+
+        if extra_signals:
+            msg += " | " + " | ".join(extra_signals)
+
+        for tf, sr in support_resist:
+            msg += f" | {tf.upper()} S/R: S={sr['support']} R={sr['resistance']}"
+
+        print(msg)
     else:
-        print(f"⏸️ No uniform trend for {symbol}")
-
-def main():
-    while True:
-        for symbol in SYMBOLS:
-            analyze_symbol(symbol)
-        print(f"🕒 Waiting {SLEEP_SECONDS//60} min...\n")
-        time.sleep(SLEEP_SECONDS)
+        print(f"⏳ {symbol} no clear trend in all timeframes")
 
 if __name__ == "__main__":
-    main()
+    while True:
+        print(f"--- {datetime.datetime.now(datetime.UTC).isoformat()} ---")
+        for symbol in SYMBOLS:
+            try:
+                analyze_symbol(symbol)
+            except Exception as e:
+                print(f"Error analyzing {symbol}: {e}")
+        time.sleep(60)
 
