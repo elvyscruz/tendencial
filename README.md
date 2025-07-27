@@ -1,8 +1,4 @@
-Aquí tienes un archivo `README.md` con una descripción clara del programa, sus funcionalidades, características clave y las posibles parametrizaciones:
 
----
-
-```markdown
 # 📈 Tendencial - Crypto Trend Signal Notifier
 
 Este programa analiza la acción del precio de criptomonedas en múltiples temporalidades para detectar señales de continuación de tendencia o retrocesos significativos. Las señales son enviadas vía notificación HTTP (ntfy.sh).
@@ -100,6 +96,5 @@ Puedes ajustar los siguientes parámetros directamente en `app.py`:
 ## ✍️ Autor
 
 Desarrollado por \[elvys cruz] como herramienta de análisis técnico automatizado para criptomonedas.
-
 
 
