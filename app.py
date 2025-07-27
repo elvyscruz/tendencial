@@ -1,230 +1,139 @@
 import requests
-import numpy as np
 import time
-from statistics import mean
+import numpy as np
+from datetime import datetime
 
-BINANCE_API_URL = "https://api.binance.com"
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","HBARUSDT","ADAUSDT"]
-TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
-NOTIFY_URL = "https://ntfy.sh/tendencial"
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT"]
+TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]
+API_URL = "https://api.binance.com/api/v3/klines"
+NTFY_URL = "https://ntfy.sh/tendencial"
 
-def get_candles(symbol, interval, limit=50):
-    url = f"{BINANCE_API_URL}/api/v3/klines"
+def get_klines(symbol, interval, limit=100):
     params = {"symbol": symbol, "interval": interval, "limit": limit}
-    response = requests.get(url, params=params)
+    response = requests.get(API_URL, params=params)
+    response.raise_for_status()
     return response.json()
 
-def get_trend_and_ma20(candles):
-    closes = np.array([float(c[4]) for c in candles if len(c) > 4])
-    if len(closes) < 21:
-        return None, None, None
-    ma20 = mean(closes[-20:])
-    current_price = closes[-1]
-    trend = "UP" if current_price > ma20 else "DOWN"
-    ma_trend = "CLOSE" if abs(current_price - ma20) / ma20 < 0.005 else "FAR"
-    return trend, ma20, ma_trend
+def detect_trend(klines):
+    closes = [float(k[4]) for k in klines]
+    return "bullish" if closes[-1] > closes[0] else "bearish"
 
-def is_retrace(candles, trend):
-    last_3 = candles[-3:]
-    if trend == "UP":
-        return all(float(c[4]) < float(c[1]) for c in last_3)
-    elif trend == "DOWN":
-        return all(float(c[4]) > float(c[1]) for c in last_3)
-    return False
+def is_ma20_near_price(klines):
+    closes = np.array([float(k[4]) for k in klines])
+    ma20 = np.mean(closes[-20:])
+    return abs(closes[-1] - ma20) / ma20 < 0.01
 
-def has_three_candles_opposite_color(candles, trend):
-    last_3 = candles[-3:]
-    if trend == "UP":
-        # 3 or more red candles (close < open)
-        return all(float(c[4]) < float(c[1]) for c in last_3)
-    elif trend == "DOWN":
-        # 3 or more green candles (close > open)
-        return all(float(c[4]) > float(c[1]) for c in last_3)
-    return False
+def is_retrace(klines):
+    closes = [float(k[4]) for k in klines]
+    peak = max(closes)
+    last = closes[-1]
+    retrace_pct = 1 - last / peak
+    return 0.4 <= retrace_pct <= 0.6
 
-def is_doji(c):
-    open_p, close_p = float(c[1]), float(c[4])
-    return abs(open_p - close_p) / float(c[2]) < 0.01
+def is_doji(kline):
+    open_price = float(kline[1])
+    close_price = float(kline[4])
+    high = float(kline[2])
+    low = float(kline[3])
+    body = abs(open_price - close_price)
+    range_ = high - low
+    return range_ > 0 and body / range_ < 0.1
 
-def is_narrow_range(c):
-    high, low = float(c[2]), float(c[3])
-    return (high - low) / float(c[4]) < 0.01
+def is_narrow_range(klines):
+    ranges = [float(k[2]) - float(k[3]) for k in klines[-5:]]
+    return ranges[-1] < np.percentile(ranges[:-1], 25)
 
-def has_high_volume(c, candles):
-    volumes = [float(x[5]) for x in candles[:-1]]
-    avg_volume = mean(volumes) if volumes else 0
-    return float(c[5]) > avg_volume * 1.5 if avg_volume > 0 else False
+def has_high_volume(kline, recent_klines):
+    volumes = [float(k[5]) for k in recent_klines]
+    return float(kline[5]) > np.mean(volumes) * 1.5
 
-def has_low_spread(c):
-    high, low = float(c[2]), float(c[3])
-    return (high - low) / float(c[4]) < 0.01
+def is_low_spread(kline):
+    high = float(kline[2])
+    low = float(kline[3])
+    spread = (high - low) / low
+    return spread < 0.001  # 0.1%
 
-def get_support_resistance(candles):
-    closes = [float(c[4]) for c in candles]
-    support = min(closes)
-    resistance = max(closes)
-    return support, resistance
+def detect_support_resistance(klines):
+    closes = [float(k[4]) for k in klines]
+    local_min = min(closes[-10:])
+    local_max = max(closes[-10:])
+    return local_min, local_max
 
-def notify(symbol, messages):
-    trend_val = list(messages["trend"].values())[0]
-    trend_text = "⬆️ Uptrend" if trend_val == "UP" else "⬇️ Downtrend"
+def format_notification(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_list, low_spread, support, resistance):
+    emoji_trend = "⬆️" if trend == "bullish" else "⬇️"
+    ma_line = f"📍 MA20 cerca en: {', '.join(ma_near)}" if ma_near else ""
+    retrace_line = f"🔄 Retroceso 40–60% en: {', '.join(retrace)}" if retrace else ""
+    doji_line = f"💠 Doji: {', '.join(doji_list)}" if doji_list else ""
+    narrow_line = f"🪙 Narrow range: {', '.join(narrow_list)}" if narrow_list else ""
+    volume_line = f"📊 Volumen alto: {', '.join(volume_list)}" if volume_list else ""
+    spread_line = "📏 Low spread en 5m" if low_spread else ""
+    sr_line = f"🔽 S/R (1h) {support:.2f} / {resistance:.2f}"
+    lines = [
+        f"🔔 {symbol} - {emoji_trend} {'Uptrend' if trend == 'bullish' else 'Downtrend'}",
+        "✔️ Tendencia alineada en todos los timeframes",
+        ma_line,
+        retrace_line,
+        doji_line,
+        narrow_line,
+        volume_line,
+        spread_line,
+        sr_line
+    ]
+    return "\n".join([line for line in lines if line])
 
-    # MA20 cerca (spread) timeframes
-    ma_near_tfs = []
-    # Retroceso 40-60% detected (bool)
-    retrace_40_60 = messages.get("retrace_40_60", False)
-    # 3 velas rojas o verdes según tendencia
-    three_candles_tfs = []
-    # Doji tfs
-    doji_tfs = []
-    # High volume tfs
-    volume_tfs = []
-    # Low spread (5m only)
-    low_spread_5m = False
-
-    for extra in messages["extras"]:
-        tf, emojis = extra.split(":")
-        if "🪶" in emojis:  # MA cerca (spread)
-            ma_near_tfs.append(tf)
-        if "🔄" in emojis:  # Retrace detected in TF (we'll skip listing here, use flag)
-            pass
-        if "3c" in emojis:  # Custom marker for 3 candles opposite color
-            three_candles_tfs.append(tf)
-        if "🌀" in emojis:  # Doji
-            doji_tfs.append(tf)
-        if "🔊" in emojis:  # High volume
-            volume_tfs.append(tf)
-        if "5m" == tf and has_low_spread(messages["last_candles"][tf][-1]):
-            low_spread_5m = True
-
-    lines = []
-    lines.append(f"🔔 {symbol} - {trend_text}")
-    lines.append(f"✔️ Tendencia alineada en todos los timeframes")
-
-    if ma_near_tfs:
-        lines.append(f"📍 MA20 cerca en: {', '.join(ma_near_tfs)}")
-
-    if retrace_40_60:
-        lines.append(f"🔄 Retroceso 40–60%")
-
-    if three_candles_tfs:
-        color_candles = "rojas" if trend_val == "UP" else "verdes"
-        lines.append(f"📉 3 velas {color_candles} detectadas (retroceso)")
-
-    if doji_tfs:
-        lines.append(f"💠 Doji detectado ({', '.join(doji_tfs)})")
-
-    if volume_tfs:
-        lines.append(f"📊 Volumen alto ({', '.join(volume_tfs)})")
-
-    if low_spread_5m:
-        lines.append(f"📏 Low spread en 5m")
-
-    # Add support/resistance if available
-    if messages["support_res"]:
-        lines.append("\n🔽 Support/Resistance")
-        lines.extend(messages["support_res"])
-
-    content = "\n".join(lines)
-
-    print(content)
-    requests.post(NOTIFY_URL, data=content.encode("utf-8"))
-
-def check_retrace_40_60(candles):
-    # Simple placeholder example: checks if last candle retraced 40-60% of previous move
-    closes = [float(c[4]) for c in candles]
-    highs = [float(c[2]) for c in candles]
-    lows = [float(c[3]) for c in candles]
-    if len(closes) < 5:
-        return False
-    # Find last swing high and low
-    last_close = closes[-1]
-    prev_close = closes[-2]
-    max_high = max(highs[-5:])
-    min_low = min(lows[-5:])
-    range_ = max_high - min_low
-    if range_ == 0:
-        return False
-    retrace_amount = abs(last_close - prev_close)
-    retrace_ratio = retrace_amount / range_
-
-    # Check if retrace between 40% and 60% of range
-    return 0.4 <= retrace_ratio <= 0.6
-
-def analyze_symbol(symbol):
-    trend_by_tf = {}
-    extras = []
-    support_res_by_tf = []
-    last_candles = {}
-
-    for tf in TIMEFRAMES:
-        candles = get_candles(symbol, tf)
-        last_candles[tf] = candles
-        trend, ma20, ma_status = get_trend_and_ma20(candles)
-        if not trend:
-            continue
-
-        trend_by_tf[tf] = trend
-
-        extra_line = ""
-
-        # MA20 close ~ spread (🪶)
-        if ma_status == "CLOSE":
-            extra_line += " 🪶"
-
-        # High volume (🔊) for 5m,15m,30m
-        if tf in ["5m", "15m", "30m"] and has_high_volume(candles[-1], candles):
-            extra_line += " 🔊"
-
-        # Low spread only 5m (📏)
-        if tf == "5m" and has_low_spread(candles[-1]):
-            extra_line += " 📏"
-
-        # Doji (🌀)
-        if is_doji(candles[-1]):
-            extra_line += " 🌀"
-
-        # Retrace (🔄)
-        if is_retrace(candles, trend):
-            extra_line += " 🔄"
-
-        # Check 3 candles opposite color, mark with "3c" emoji for custom handling
-        if has_three_candles_opposite_color(candles, trend):
-            extra_line += " 3c"
-
-        if extra_line:
-            extras.append(f"{tf}:{extra_line.strip()}")
-
-        if tf in ["1h", "4h", "1d"]:
-            support, resistance = get_support_resistance(candles)
-            support_res_by_tf.append(f"{tf}: S={support:.2f} R={resistance:.2f}")
-
-    # Check retrace 40-60% on highest timeframe candles (e.g. daily)
-    retrace_40_60 = False
-    for tf in ["1h", "4h", "1d"]:
-        if tf in last_candles and check_retrace_40_60(last_candles[tf]):
-            retrace_40_60 = True
-            break
-
-    # Solo notificar si todos los timeframes tienen tendencia igual y completa
-    if len(trend_by_tf) == len(TIMEFRAMES):
-        unique_trends = set(trend_by_tf.values())
-        if len(unique_trends) == 1 and unique_trends.pop() in {"UP", "DOWN"}:
-            notify(symbol, {
-                "trend": trend_by_tf,
-                "extras": extras,
-                "support_res": support_res_by_tf,
-                "retrace_40_60": retrace_40_60,
-                "last_candles": last_candles,
-            })
-
-if __name__ == "__main__":
+def main():
     while True:
         for symbol in SYMBOLS:
-            try:
-                analyze_symbol(symbol)
-            except Exception as e:
-                print(f"Error analyzing {symbol}: {e}")
-        print("Waiting 5 minutes before next check...\n")
+            all_trends = []
+            ma_near = []
+            retrace = []
+            doji_list = []
+            narrow_list = []
+            volume_list = []
+            low_spread = False
+            support = resistance = None
+            trend_ref = None
+
+            for tf in TIMEFRAMES:
+                klines = get_klines(symbol, tf, 100)
+                trend = detect_trend(klines)
+                all_trends.append(trend)
+
+                if trend_ref is None:
+                    trend_ref = trend
+
+                if trend == trend_ref:
+                    if is_ma20_near_price(klines):
+                        ma_near.append(tf)
+
+                    if is_retrace(klines):
+                        retrace.append(tf)
+
+                    if is_doji(klines[-1]):
+                        doji_list.append(tf)
+
+                    if is_narrow_range(klines):
+                        narrow_list.append(tf)
+
+                    if tf in ["5m", "15m", "30m"] and has_high_volume(klines[-1], klines[-6:-1]):
+                        volume_list.append(tf)
+
+                    if tf == "5m" and is_low_spread(klines[-1]):
+                        low_spread = True
+
+                    if tf == "1h":
+                        support, resistance = detect_support_resistance(klines)
+
+            if all(t == trend_ref for t in all_trends):
+                msg = format_notification(
+                    symbol, trend_ref, ma_near, retrace,
+                    doji_list, narrow_list, volume_list,
+                    low_spread, support, resistance
+                )
+                requests.post(NTFY_URL, data=msg.encode('utf-8'))
+
         time.sleep(60)
+
+if __name__ == "__main__":
+    main()
 
