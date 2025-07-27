@@ -17,6 +17,8 @@ Este programa analiza la acción del precio de criptomonedas en múltiples tempo
 - **Análisis de volumen** (solo 5m, 15m y 30m): Marca volúmenes superiores a la media reciente como significativos.
 - **Low spread** (solo 5m): Indica si la vela actual tiene una diferencia pequeña entre apertura y cierre (baja volatilidad).
 
+- **Cálculo de niveles de soporte y resistencia** (1h) Calcula los niveles de soporte y resistencia a 1 hora
+
 ---
 
 ## 🔔 Notificaciones
@@ -41,6 +43,8 @@ Ejemplo:
 💠 Doji detectado (15m)
 📊 Volumen alto (5m, 15m)
 📏 Low spread en 5m
+🔽 S/R (1h) 113,567.80 / i110,603.10
+
 
 ````
 
