@@ -3,8 +3,8 @@ import time
 import numpy as np
 from datetime import datetime
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT"]
-TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT"]
+TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h","1d"]
 API_URL = "https://api.binance.com/api/v3/klines"
 NTFY_URL = "https://ntfy.sh/tendencial"
 
@@ -130,9 +130,11 @@ def main():
                     doji_list, narrow_list, volume_list,
                     low_spread, support, resistance
                 )
-                requests.post(NTFY_URL, data=msg.encode('utf-8'))
+                print(msg)
+                print("\n")
+                # requests.post(NTFY_URL, data=msg.encode('utf-8'))
 
-        time.sleep(60)
+        time.sleep(300)
 
 if __name__ == "__main__":
     main()
