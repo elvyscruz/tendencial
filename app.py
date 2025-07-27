@@ -1,114 +1,141 @@
 import requests
 import time
-import datetime
 import numpy as np
+from datetime import datetime, UTC
 import json
 import urllib.request
 
-# Configuración
-SYMBOLS = ["BTCUSDT", "ETHUSDT","LTCUSDT","BCHUSDT","SOLUSDT","XRPUSDT","BNBUSDT","ADAUSDT","TRXUSDT","DOGEUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BCHUSDT","LTCUSDT","SOLUSDT","XRPUSDT","BNBUSDT"]
 TIMEFRAMES = {
-    "5m": "5m", "15m": "15m", "30m": "30m",
-    "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w"
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1h": "1h",
+    "4h": "4h",
+    "1d": "1d",
+    "1w": "1w"
 }
-SLEEP_INTERVAL = 300  # 5 minutos
+SLEEP_INTERVAL = 300  # 5 minutes
 NTFY_URL = "https://ntfy.sh/3lvys"
 
-# Función para obtener velas
-def get_candles(symbol, interval, limit=50):
+def fetch_klines(symbol, interval, limit=50):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     with urllib.request.urlopen(url) as response:
-        return json.loads(response.read())
+        data = json.loads(response.read())
+        return data
 
-# Determinar tendencia y MA20
 def get_trend_and_ma20(candles):
     closes = np.array([float(c[4]) for c in candles])
-    ma20 = closes[-20:].mean()
-    trend = "up" if closes[-1] > closes[0] else "down"
-    ma_trend = "rising" if ma20 > closes[-30:-10].mean() else "declining"
+    if len(closes) < 20:
+        return "flat", None, "flat"
+    
+    ma20 = np.mean(closes[-20:])
+    current = closes[-1]
+    previous = closes[-2]
+
+    trend = "up" if current > previous else "down" if current < previous else "flat"
+    ma_trend = "rising" if ma20 > np.mean(closes[-21:-1]) else "falling" if ma20 < np.mean(closes[-21:-1]) else "flat"
     return trend, ma20, ma_trend
 
-# Verificar si precio está cerca del MA20
-def is_close_to_ma20(price, ma20, threshold=0.01):
-    return abs(price - ma20) / ma20 < threshold
+def near_ma20(current, ma20, threshold=0.01):
+    return abs(current - ma20) / ma20 < threshold
 
-# Detectar retroceso del 40-60%
-def detect_retrace(candles):
+def has_retrace(candles, direction):
     closes = np.array([float(c[4]) for c in candles])
-    high = closes.max()
-    low = closes.min()
-    last = closes[-1]
-    if last < high and last > low:
-        drop = (high - last) / (high - low)
-        if 0.4 <= drop <= 0.6:
-            return True
-    return False
+    highs = np.array([float(c[2]) for c in candles])
+    lows = np.array([float(c[3]) for c in candles])
 
-# Verificar retroceso por color de velas
-def is_retrace_by_color(candles, main_trend):
+    if direction == "up":
+        recent_high = np.max(highs[-10:])
+        retrace = (recent_high - closes[-1]) / (recent_high - np.min(lows[-10:]) + 1e-8)
+    else:
+        recent_low = np.min(lows[-10:])
+        retrace = (closes[-1] - recent_low) / (np.max(highs[-10:]) - recent_low + 1e-8)
+
+    return 0.4 <= retrace <= 0.6
+
+def opposite_colored_candles(candles, trend):
+    recent = candles[-3:]
     count = 0
-    for c in candles[-5:]:
-        open_, close = float(c[1]), float(c[4])
-        is_red = close < open_
-        is_green = close > open_
-        if (main_trend == "up" and is_red) or (main_trend == "down" and is_green):
+    for c in recent:
+        open_ = float(c[1])
+        close = float(c[4])
+        if trend == "up" and close < open_:
+            count += 1
+        elif trend == "down" and close > open_:
             count += 1
     return count >= 3
 
-# Notificación
-def send_notification(symbol, trend, info):
-    msg = f"{symbol} → {trend.upper()}\n{info}"
-    requests.post(NTFY_URL, data=msg.encode())
+def send_notification(symbol, trend, ma_trends, near_ma_times, retrace_times, opposite_candles):
+    emoji = "📈" if trend == "up" else "📉"
+    message = f"{emoji} {symbol} {trend.upper()} trend on all TFs\n"
 
-# Análisis por símbolo
+    if ma_trends and all(mt == ma_trends[0] for mt in ma_trends):
+        message += f"🧠 MA20 {ma_trends[0]}\n"
+
+    if near_ma_times:
+        message += f"📍Near MA20: {', '.join(near_ma_times)}\n"
+
+    if retrace_times:
+        message += f"🔄 Retrace: {', '.join(retrace_times)}\n"
+
+    if opposite_candles:
+        message += f"🕯️ Reversal Candles: {', '.join(opposite_candles)}\n"
+
+    payload = {
+        "topic": "3elvys",
+        "message": message.strip(),
+        "title": f"{symbol} {emoji} ALERT",
+        "tags": [trend]
+    }
+    requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Content-Type": "text/plain; charset=utf-8"})
+
+
 def analyze_symbol(symbol):
-    print(f"\n{symbol} -> analizando...")
-    price_directions, ma20_matches, ma_trends, retrace_flags, color_retrace_flags = [], [], [], [], []
+    print(f"\n[{datetime.now(UTC).strftime('%H:%M:%S')}] Analizando {symbol}...")
+    price_directions = []
+    ma_trends = []
+    near_ma_times = []
+    retrace_times = []
+    opposite_candles_times = []
 
-    for tf_name, tf in TIMEFRAMES.items():
+    for tf_name, tf_interval in TIMEFRAMES.items():
         try:
-            candles = get_candles(symbol, tf)
+            candles = fetch_klines(symbol, tf_interval)
             trend, ma20, ma_trend = get_trend_and_ma20(candles)
-            last_price = float(candles[-1][4])
-
             price_directions.append(trend)
             ma_trends.append(ma_trend)
 
             if tf_name in ["5m", "15m", "30m", "1h"]:
-                close_to_ma = is_close_to_ma20(last_price, ma20)
-                ma20_matches.append(close_to_ma)
-            else:
-                ma20_matches.append(False)
+                current = float(candles[-1][4])
+                if near_ma20(current, ma20):
+                    near_ma_times.append(tf_name)
 
-            retrace_flags.append(detect_retrace(candles))
-            color_retrace_flags.append(is_retrace_by_color(candles, trend))
+            if has_retrace(candles, trend):
+                retrace_times.append(tf_name)
+
+            if opposite_colored_candles(candles, trend):
+                opposite_candles_times.append(tf_name)
 
         except Exception as e:
-            print(f"Error procesando {symbol} {tf}: {e}")
+            print(f"Error en {symbol} {tf_name}: {e}")
             return
 
-    # Validar tendencia unificada
-    if all(d == price_directions[0] for d in price_directions):
-        info = []
-        if all(mt == ma_trends[0] for mt in ma_trends):
-            info.append(f"MA20: {ma_trends[0]}")
-        if any(ma20_matches):
-            info.append("Cerca MA20 (TF cortos)")
-        if any(retrace_flags):
-            info.append("Retroceso 40-60%")
-        if any(color_retrace_flags):
-            info.append("3+ velas opuestas")
-
-        print(f"{symbol}: tendencia UNIFICADA → {price_directions[0]}")
-        send_notification(symbol, price_directions[0], " | ".join(info))
+    main_trend = price_directions[0]
+    if all(d == main_trend for d in price_directions if d != "flat"):
+        print(f"🔔 {symbol}: tendencia {main_trend} en todos los TF")
+        send_notification(
+            symbol, main_trend, ma_trends,
+            near_ma_times, retrace_times,
+            opposite_candles_times
+        )
     else:
-        print(f"{symbol}: sin tendencia clara. Direcciones: {price_directions}")
+        print(f"{symbol}: no hay tendencia unificada. {price_directions}")
 
-# Bucle principal
 def monitor():
-    print("Iniciando monitoreo de tendencias...")
+    print("⏳ Iniciando monitoreo...")
     while True:
-        print(f"\n⏰ {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"\n⏱️ {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} Monitoreando...")
         for symbol in SYMBOLS:
             analyze_symbol(symbol)
         time.sleep(SLEEP_INTERVAL)
