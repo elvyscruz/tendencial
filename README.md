@@ -1,7 +1,7 @@
 
 # 📈 Tendencial - Crypto Trend Signal Notifier
 
-Este programa analiza la acción del precio de criptomonedas en múltiples temporalidades para detectar señales de continuación de tendencia o retrocesos significativos. Las señales son enviadas vía notificación HTTP (ntfy.sh).
+Este programa analiza la acción del precio de criptomonedas en múltiples temporalidades para detectar señales de continuación de tendencia o retrocesos significativos. 
 
 ---
 
@@ -21,9 +21,9 @@ Este programa analiza la acción del precio de criptomonedas en múltiples tempo
 
 ---
 
-## 🔔 Notificaciones
+## 🔔 Indicadores de Tendencias 
 
-Las alertas se envían a través de [ntfy.sh](https://ntfy.sh) e incluyen:
+Los indicadores de tendencias generados son los iguientes:
 
 - Tendencia principal con emoji (⬆️ o ⬇️)
 - Confirmaciones de tendencia
@@ -39,11 +39,10 @@ Ejemplo:
 ✔️ Tendencia alineada en todos los timeframes
 📍 MA20 cerca en: 5m, 15m
 🔄 Retroceso 40–60%
-📉 3 velas rojas detectadas (retroceso)
 💠 Doji detectado (15m)
 📊 Volumen alto (5m, 15m)
 📏 Low spread en 5m
-🔽 S/R (1h) 113,567.80 / i110,603.10
+🔽 S/R (1h) 113,567.80 / 110,603.10
 
 
 ````
@@ -81,7 +80,6 @@ Puedes ajustar los siguientes parámetros directamente en `app.py`:
 | ------------------- | ------------------------------------------------------------------------- |
 | `SYMBOLS`           | Lista de símbolos a analizar (ej. `["BTC/USDT", "ETH/USDT"]`)             |
 | `TIMEFRAMES`        | Temporalidades a evaluar                                                  |
-| `MA_PERIOD`         | Periodo para la media móvil (default: 20)                                 |
 | `RETRACE_RANGE`     | Rango porcentual de retroceso considerado significativo (default: 40–60%) |
 | `VOLUME_MULTIPLIER` | Umbral para considerar volumen alto (ej. > 1.2 \* media)                  |
 | `SPREAD_THRESHOLD`  | Umbral para considerar una vela como de low spread                        |
