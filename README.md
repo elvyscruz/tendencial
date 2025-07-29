@@ -1,7 +1,6 @@
-
 # 📈 Tendencial - Crypto Trend Signal Notifier
 
-Este programa analiza la acción del precio de criptomonedas en múltiples temporalidades para detectar señales de continuación de tendencia o retrocesos significativos. 
+Este programa analiza la acción del precio de criptomonedas en múltiples temporalidades para detectar señales de continuación de tendencia o retrocesos significativos.
 
 ---
 
@@ -21,7 +20,7 @@ Este programa analiza la acción del precio de criptomonedas en múltiples tempo
 
 ---
 
-## 🔔 Indicadores de Tendencias 
+## 🔔 Indicadores de Tendencias
 
 Los indicadores de tendencias generados son los iguientes:
 
@@ -30,8 +29,9 @@ Los indicadores de tendencias generados son los iguientes:
 - Timeframes donde el MA20 está cerca
 - Alertas de retroceso y volumen
 - Detección de velas contrarias, Doji o low spread
+- Deteccion de Impulso de Elliot detectado en 4h
 
-Ejemplo:
+Ejemplo de Salida:
 
 ```
 
@@ -43,9 +43,29 @@ Ejemplo:
 📊 Volumen alto (5m, 15m)
 📏 Low spread en 5m
 🔽 S/R (1h) 113,567.80 / 110,603.10
+🔼 Impulso Elliott detectado en 4h (Posible Onda 3)
 
 
-````
+```
+
+---
+
+**📌 Tabla de Mensajes: Análisis Técnico + Elliott Wave + Fibonacci**
+
+| **Mensaje**                               | **Significado**                                                                  | **Cuándo Ocurre**                                                     | **Acción Sugerida**                                                                     |
+| ----------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `🔔 SYMBOL - ⬆️ Uptrend`                  | Tendencia alcista alineada en todos los timeframes.                              | - Cuando el precio hace máximos y mínimos crecientes en D1, 4h, 1h.   | **Operar en largo**. Buscar entradas en retrocesos (Onda 2, 4 o ABC).                   |
+| `🔔 SYMBOL - ⬇️ Downtrend`                | Tendencia bajista alineada en todos los timeframes.                              | - Cuando el precio hace máximos y mínimos decrecientes en D1, 4h, 1h. | **Operar en corto**. Buscar entradas en rallies correctivos.                            |
+| `📍 MA20 cerca en: 1h, 4h`                | El precio está cerca de la media móvil de 20 períodos (soporte/resistencia).     | - En retrocesos durante una tendencia.                                | Confirmar con velas de reversión. Usar MA20 como zona de entrada.                       |
+| `🔄 Retroceso 30–60% en: 1h`              | El precio retrocedió entre 30% y 60% desde el último máximo/mínimo.              | - Durante ondas 2, 4 o correcciones ABC.                              | Buscar entradas si coincide con Fibonacci (ej: 50% o 61.8%).                            |
+| `💠 Doji: 1h, 4h`                         | Apareció una vela Doji (indecisión del mercado).                                 | - En soportes/resistencias o niveles clave.                           | Esperar confirmación (vela alcista/bajista siguiente).                                  |
+| `🗠 Narrow range: 1h`                      | Rango de precio estrecho (posible consolidación antes de breakout).              | - Antes de rupturas de S/R o continuación de tendencia.               | Prepararse para operar el breakout con volumen.                                         |
+| `📊 Volumen alto: 15m, 30m`               | Aumento anormal de volumen (confirma interés en la dirección del movimiento).    | - En rupturas de S/R o inicio de ondas impulsivas (Onda 3).           | Validar con estructura de Elliott.                                                      |
+| `📏 Low spread en 5m`                     | Spread bajo entre máximo y mínimo (poca volatilidad temporal).                   | - Antes de movimientos fuertes (acumulación/distribución).            | Monitorizar para posibles breakouts.                                                    |
+| `🔽 S/R (1h) 50.0 / 52.0`                 | Niveles de soporte/resistencia clave detectados.                                 | - En zonas de rechazo histórico o retrocesos.                         | Usar para colocar stops o tomar ganancias.                                              |
+| `🔼 Impulso Elliott detectado en 4h`      | Confirmación de ondas 1-3-5 (fase impulsiva).                                    | - Tras una corrección validada (ABC o retroceso Fibonacci).           | Entrar en la dirección de la tendencia. Stop en inicio de la Onda 1.                    |
+| `🔽 Corrección ABC en ✅ Fibonacci 61.8%` | Fin de corrección ABC en nivel Fibonacci clave (alta probabilidad de reversión). | - Tras un impulso previo (Onda 1 o 3).                                | Entrar en dirección de la tendencia principal. Stop por debajo del mínimo de la Onda C. |
+| `✅ Fibonacci 61.8% (52000.00)`           | Precio en nivel clave de retroceso Fibonacci (61.8%).                            | - Durante ondas 2, 4 o correcciones ABC.                              | Buscar entradas si hay confirmación de reversión (velas, volumen).                      |
 
 ---
 
@@ -54,9 +74,10 @@ Ejemplo:
 Python 3.10+
 
 Instalar dependencias:
+
 ```bash
 pip install -r requirements.txt
-````
+```
 
 ---
 
@@ -89,20 +110,18 @@ Puedes ajustar los siguientes parámetros directamente en `app.py`:
 
 ## 🧪 Estado actual
 
-* ✅ Estable y funcional
-* 🛠 En desarrollo para agregar más patrones técnicos (soporte/resistencia, RSI, etc.)
-* 🚫 No ejecuta operaciones reales (puede integrarse en el futuro)
+- ✅ Estable y funcional
+- 🛠 En desarrollo para agregar más patrones técnicos (soporte/resistencia, RSI, etc.)
+- 🚫 No ejecuta operaciones reales (puede integrarse en el futuro)
 
 ---
 
 ## 🤝 Cómo contribuir
 
-Contribuciones son bienvenidas. Puedes reportar errores, sugerir mejoras o enviar pull requests. 
+Contribuciones son bienvenidas. Puedes reportar errores, sugerir mejoras o enviar pull requests.
 
 ---
 
 ## ✍️ Autor
 
 Desarrollado por \[elvys cruz] en Dominican Republic 🇩🇴
-
-
