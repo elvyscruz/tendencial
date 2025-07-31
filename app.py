@@ -4,15 +4,15 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT","PAXGUSDT"]
 
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h","1d"]
 API_URL = "https://api.binance.com/api/v3/klines"
 NTFY_URL = "https://ntfy.sh/tendencial"
-VOLUME_MULTIPLIER = 1.1
+VOLUME_MULTIPLIER = 1.2
 SPREAD_THRESHOLD = 0.001  # 1%
 MA20_THRESHOLD = 0.005  # near to MA20
-RETRACE_RANGE = (30, 60)  # 30-60%
+RETRACE_RANGE = (4, 7)  # 4%-10%
 FIBONACCI_LEVELS = [0.382, 0.5, 0.618, 0.786]  # Niveles clave de Fibonacci
 
 # --- Funciones de Fibonacci ---
@@ -123,7 +123,7 @@ def detect_support_resistance(klines):
 def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_list, low_spread, support, resistance, elliott_signals):
     emoji_trend = "⬆️" if trend == "bullish" else "⬇️"
     ma_line = f"📍 MA20 cerca en: {', '.join(ma_near)}" if ma_near else ""
-    retrace_line = f"🔄 Retroceso 30–60% en: {', '.join(retrace)}" if retrace else ""
+    retrace_line = f"🔄 Retroceso {RETRACE_RANGE[0]}%-{RETRACE_RANGE[1]}% en: {', '.join(retrace)}" if retrace else ""
     doji_line = f"💠 Doji: {', '.join(doji_list)}" if doji_list else ""
     narrow_line = f"🗠 Narrow range: {', '.join(narrow_list)}" if narrow_list else ""
     volume_line = f"📊 Volumen alto: {', '.join(volume_list)}" if volume_list else ""
