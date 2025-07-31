@@ -4,16 +4,16 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT","XLMUSDT","AVAXUSDT","SHIBUSDT","XMRUSDT","PEPEUSDT","APTUSDT","ALGOUSDT", "LINKUSDT","TONUSDT","UNIUSDT","TAOUSDT","NEARUSDT","RENDERUSDT","FETUSDT","DOTUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT"]
 
-TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
+TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h","1d"]
 API_URL = "https://api.binance.com/api/v3/klines"
 NTFY_URL = "https://ntfy.sh/tendencial"
-VOLUME_MULTIPLIER = 1.2
+VOLUME_MULTIPLIER = 1.1
 SPREAD_THRESHOLD = 0.001  # 1%
 MA20_THRESHOLD = 0.005  # near to MA20
 RETRACE_RANGE = (30, 60)  # 30-60%
-FIBONACCI_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786]  # Niveles clave de Fibonacci
+FIBONACCI_LEVELS = [0.382, 0.5, 0.618, 0.786]  # Niveles clave de Fibonacci
 
 # --- Funciones de Fibonacci ---
 def calculate_fibonacci_levels(high, low):
@@ -128,7 +128,7 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
     narrow_line = f"🗠 Narrow range: {', '.join(narrow_list)}" if narrow_list else ""
     volume_line = f"📊 Volumen alto: {', '.join(volume_list)}" if volume_list else ""
     spread_line = "📏 Low spread en 5m" if low_spread else ""
-    sr_line = f"🔽 S/R (1h) {support:.2f} / {resistance:.2f}"
+    sr_line = f"⚟ Support / Resistance (1h) {support:.2f} / {resistance:.2f}"
     elliott_line = "\n".join(elliott_signals) if elliott_signals else ""
     
     lines = [
