@@ -9,7 +9,7 @@ SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BN
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h","1d"]
 API_URL = "https://api.binance.com/api/v3/klines"
 NTFY_URL = "https://ntfy.sh/tendencial"
-VOLUME_MULTIPLIER = 1.2
+VOLUME_MULTIPLIER = 1.3
 SPREAD_THRESHOLD = 0.001  # 1%
 MA20_THRESHOLD = 0.005  # near to MA20
 RETRACE_RANGE = (4, 7)  # 4%-10%
@@ -124,7 +124,7 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
     emoji_trend = "⬆️" if trend == "bullish" else "⬇️"
     ma_line = f"📍 MA20 cerca en: {', '.join(ma_near)}" if ma_near else ""
     retrace_line = f"🔄 Retroceso {RETRACE_RANGE[0]}%-{RETRACE_RANGE[1]}% en: {', '.join(retrace)}" if retrace else ""
-    doji_line = f"💠 Doji: {', '.join(doji_list)}" if doji_list else ""
+    doji_line = f"🕯️ Doji: {', '.join(doji_list)}" if doji_list else ""
     narrow_line = f"🗠 Narrow range: {', '.join(narrow_list)}" if narrow_list else ""
     volume_line = f"📊 Volumen alto: {', '.join(volume_list)}" if volume_list else ""
     spread_line = "📏 Low spread en 5m" if low_spread else ""
