@@ -4,16 +4,13 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT","PAXGUSDT"]
-
-TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h","1d"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT","XLMUSDT","AVAXUSDT","TONUSDT","XMRUSDT","PEPEUSDT","TAOUSDT","RENDERUSDT"]
+TIMEFRAMES = ["1m","5m", "15m"]
 API_URL = "https://api.binance.com/api/v3/klines"
-NTFY_URL = "https://ntfy.sh/tendencial"
 VOLUME_MULTIPLIER = 1.3
 SPREAD_THRESHOLD = 0.001  # 1%
 MA20_THRESHOLD = 0.005  # near to MA20
-RETRACE_RANGE = (4, 7)  # 4%-10%
-FIBONACCI_LEVELS = [0.382, 0.5, 0.618, 0.786]  # Niveles clave de Fibonacci
+RETRACE_RANGE = (3, 7)  # 4%-10%
 
 # --- Funciones de Fibonacci ---
 def calculate_fibonacci_levels(high, low):
@@ -67,12 +64,20 @@ def detect_elliott_waves(df, timeframe):
 
     return None
 
-# --- Funciones existentes (sin cambios) ---
+# --- Funciones existentes ---
 def get_klines(symbol, interval, limit=100):
     params = {"symbol": symbol, "interval": interval, "limit": limit}
     response = requests.get(API_URL, params=params)
     response.raise_for_status()
     return response.json()
+
+def get_latest_price(symbol, interval):
+    klines = get_klines(symbol, interval, limit=1)  # Solo necesitamos el más reciente
+    if not klines:
+        return None
+    latest_kline = klines[-1]  # Último elemento (en este caso el único)
+    close_price = float(latest_kline[4])  # El precio de cierre está en el índice 4
+    return close_price
 
 def detect_trend(klines):
     closes = [float(k[4]) for k in klines]
@@ -119,8 +124,63 @@ def detect_support_resistance(klines):
     local_max = max(closes[-10:])
     return local_min, local_max
 
+# --- Funciones mejoradas para ambas direcciones ---
+def is_breakout(klines, trend, volume_multiplier=1.3):
+    """Detecta rupturas en ambas direcciones con volumen alto"""
+    if len(klines) < 10:
+        return False, None, None
+    
+    # Obtener soporte/resistencia local
+    local_support, local_resistance = detect_support_resistance(klines)
+    last_close = float(klines[-1][4])
+    last_volume = float(klines[-1][5])
+    
+    # Calcular volumen promedio (excluyendo última vela)
+    avg_volume = np.mean([float(k[5]) for k in klines[-6:-1]]) if len(klines) >= 6 else last_volume
+    
+    # Verificar ruptura según tendencia
+    if trend == "bullish" and last_close > local_resistance and last_volume > avg_volume * volume_multiplier:
+        return True, "resistance", local_resistance
+    elif trend == "bearish" and last_close < local_support and last_volume > avg_volume * volume_multiplier:
+        return True, "support", local_support
+    return False, None, None
+
+def is_impulse(kline, recent_klines, trend, volume_multiplier=1.3):
+    """Identifica velas de impulso en ambas direcciones"""
+    open_price = float(kline[1])
+    close_price = float(kline[4])
+    high = float(kline[2])
+    low = float(kline[3])
+    
+    # Calcular características de la vela
+    body = abs(close_price - open_price)
+    total_range = high - low
+    if total_range <= 0:
+        return False, None
+    body_ratio = body / total_range
+    
+    # Verificar volumen
+    current_volume = float(kline[5])
+    avg_volume = np.mean([float(k[5]) for k in recent_klines]) if recent_klines else current_volume
+    
+    # Verificar dirección de la vela según tendencia
+    if trend == "bullish":
+        # En tendencia alcista, queremos velas verdes (close > open)
+        if close_price <= open_price:
+            return False, None
+        if body_ratio >= 0.7 and current_volume > avg_volume * volume_multiplier:
+            return True, "bullish"
+    elif trend == "bearish":
+        # En tendencia bajista, queremos velas rojas (close < open)
+        if close_price >= open_price:
+            return False, None
+        if body_ratio >= 0.7 and current_volume > avg_volume * volume_multiplier:
+            return True, "bearish"
+    
+    return False, None
+
 # --- Función de mensaje actualizada ---
-def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_list, low_spread, support, resistance, elliott_signals):
+def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_list, low_spread, support, resistance, elliott_signals, breakout_list, impulse_list):
     emoji_trend = "⬆️" if trend == "bullish" else "⬇️"
     ma_line = f"📍 MA20 cerca en: {', '.join(ma_near)}" if ma_near else ""
     retrace_line = f"🔄 Retroceso {RETRACE_RANGE[0]}%-{RETRACE_RANGE[1]}% en: {', '.join(retrace)}" if retrace else ""
@@ -128,8 +188,10 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
     narrow_line = f"🗠 Narrow range: {', '.join(narrow_list)}" if narrow_list else ""
     volume_line = f"📊 Volumen alto: {', '.join(volume_list)}" if volume_list else ""
     spread_line = "📏 Low spread en 5m" if low_spread else ""
-    sr_line = f"⚟ Support / Resistance (1h) {support:.2f} / {resistance:.2f}"
+    sr_line = f"⚟ Support / Resistance (1h) {support:.2f} / {resistance:.2f}" if support and resistance else ""
     elliott_line = "\n".join(elliott_signals) if elliott_signals else ""
+    breakout_line = f"🚀 Breakout: {', '.join(breakout_list)}" if breakout_list else ""
+    impulse_line = f"💥 Impulse: {', '.join(impulse_list)}" if impulse_list else ""
     
     lines = [
         f"🔔 {symbol} - {emoji_trend} {'Uptrend' if trend == 'bullish' else 'Downtrend'}",
@@ -141,7 +203,9 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
         volume_line,
         spread_line,
         sr_line,
-        elliott_line
+        elliott_line,
+        breakout_line,
+        impulse_line
     ]
     return "\n".join([line for line in lines if line])
 
@@ -158,6 +222,8 @@ def main():
             support = resistance = None
             trend_ref = None
             elliott_signals = []
+            breakout_list = []
+            impulse_list = []
 
             for tf in TIMEFRAMES:
                 klines = get_klines(symbol, tf, 100)
@@ -203,17 +269,31 @@ def main():
                         if signal:
                             elliott_signals.append(f"{signal} ({tf})")
 
-            if all(t == trend_ref for t in all_trends):
+                    # Detectar rupturas en ambas direcciones
+                    breakout_detected, level_type, level_value = is_breakout(klines, trend_ref, VOLUME_MULTIPLIER)
+                    if breakout_detected:
+                        breakout_list.append(f"{tf} ({level_type} {level_value:.2f})")
+
+                    # Detectar velas de impulso en ambas direcciones
+                    if len(klines) >= 6:
+                        recent_klines = klines[-6:-1]
+                        impulse_detected, direction = is_impulse(klines[-1], recent_klines, trend_ref, VOLUME_MULTIPLIER)
+                        if impulse_detected:
+                            impulse_list.append(f"{tf} ({direction})")
+
+            if all(t == trend_ref for t in all_trends) and any([retrace, doji_list,volume_list, breakout_list, impulse_list]) :
                 msg = format_msg(
                     symbol, trend_ref, ma_near, retrace,
                     doji_list, narrow_list, volume_list,
-                    low_spread, support, resistance, elliott_signals
+                    low_spread, support, resistance, 
+                    elliott_signals, breakout_list, impulse_list
                 )
-                print(datetime.now())
+                print(datetime.now(), "Ultimo precio->", get_latest_price(symbol, "1m"))
                 print(msg)
                 print("")
-
-        time.sleep(300)
+        print("#" * 80)
+        print()
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
