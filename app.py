@@ -5,12 +5,12 @@ import pandas as pd
 from datetime import datetime
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "BCHUSDT", "XRPUSDT", "BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","HBARUSDT", "ONDOUSDT","SUIUSDT","XLMUSDT","AVAXUSDT","TONUSDT","XMRUSDT","PEPEUSDT","TAOUSDT","RENDERUSDT"]
-TIMEFRAMES = ["1m","5m", "15m"]
+TIMEFRAMES = ["1m","3m","5m", "15m"]
 API_URL = "https://api.binance.com/api/v3/klines"
-VOLUME_MULTIPLIER = 1.3
+VOLUME_MULTIPLIER = 1.5
 SPREAD_THRESHOLD = 0.001  # 1%
-MA20_THRESHOLD = 0.005  # near to MA20
-RETRACE_RANGE = (3, 7)  # 4%-10%
+MA20_THRESHOLD = 0.0025  # near to MA20
+RETRACE_RANGE = (5, 7)  # 4%-10%
 
 # --- Funciones de Fibonacci ---
 def calculate_fibonacci_levels(high, low):
@@ -145,7 +145,7 @@ def is_breakout(klines, trend, volume_multiplier=1.3):
         return True, "support", local_support
     return False, None, None
 
-def is_impulse(kline, recent_klines, trend, volume_multiplier=1.3):
+def is_impulse(kline, recent_klines, trend, volume_multiplier=1.4):
     """Identifica velas de impulso en ambas direcciones"""
     open_price = float(kline[1])
     close_price = float(kline[4])
@@ -195,7 +195,6 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
     
     lines = [
         f"🔔 {symbol} - {emoji_trend} {'Uptrend' if trend == 'bullish' else 'Downtrend'}",
-        "✔️ Tendencia alineada en todos los timeframes",
         ma_line,
         retrace_line,
         doji_line,
@@ -281,14 +280,14 @@ def main():
                         if impulse_detected:
                             impulse_list.append(f"{tf} ({direction})")
 
-            if all(t == trend_ref for t in all_trends) and any([retrace, doji_list,volume_list, breakout_list, impulse_list]) :
+            if all(t == trend_ref for t in all_trends) and any([retrace, (ma_near) >=3,doji_list, volume_list, breakout_list, impulse_list]) :
                 msg = format_msg(
                     symbol, trend_ref, ma_near, retrace,
                     doji_list, narrow_list, volume_list,
                     low_spread, support, resistance, 
                     elliott_signals, breakout_list, impulse_list
                 )
-                print(datetime.now(), "Ultimo precio->", get_latest_price(symbol, "1m"))
+                print(datetime.now(), "price->", get_latest_price(symbol, "1m"))
                 print(msg)
                 print("")
         print("#" * 80)
