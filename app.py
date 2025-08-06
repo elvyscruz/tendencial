@@ -10,7 +10,7 @@ API_URL = "https://api.binance.com/api/v3/klines"
 VOLUME_MULTIPLIER = 1.5
 SPREAD_THRESHOLD = 0.001  # 1%
 MA20_THRESHOLD = 0.0025  # near to MA20
-RETRACE_RANGE = (5, 7)  # 4%-10%
+RETRACE_RANGE = (4, 7)  # 4%-10%
 
 # --- Funciones de Fibonacci ---
 def calculate_fibonacci_levels(high, low):
@@ -208,6 +208,67 @@ def format_msg(symbol, trend, ma_near, retrace, doji_list, narrow_list, volume_l
     ]
     return "\n".join([line for line in lines if line])
 
+# --- Nueva función para sugerencias de trading ---
+def generate_trading_suggestion(
+    trend, breakout_list, impulse_list, retrace, 
+    elliott_signals, ma_near, symbol
+):
+    """
+    Genera sugerencia de trading basada en múltiples señales técnicas
+    Asigna puntuaciones para determinar la fuerza de la señal
+    """
+    long_score = 0
+    short_score = 0
+    
+    # Breakouts: Señal fuerte
+    for breakout in breakout_list:
+        tf, level_type, _ = breakout
+        if level_type == "resistance" and trend == "bullish":
+            long_score += 2
+        elif level_type == "support" and trend == "bearish":
+            short_score += 2
+    
+    # Velas de impulso: Señal fuerte
+    for impulse in impulse_list:
+        tf, direction = impulse
+        if direction == "bullish" and trend == "bullish":
+            long_score += 2
+        elif direction == "bearish" and trend == "bearish":
+            short_score += 2
+    
+    # Retrocesos: Señal moderada
+    if retrace:
+        if trend == "bullish":
+            long_score += len(retrace)  # +1 por timeframe con retroceso
+        else:
+            short_score += len(retrace)
+    
+    # Ondas de Elliott: Señal fuerte
+    for signal in elliott_signals:
+        if "🔼" in signal and trend == "bullish":
+            long_score += 3
+        elif "🔽" in signal and trend == "bearish":
+            short_score += 3
+    
+    # Proximidad a MA20: Señal débil
+    if ma_near:
+        if trend == "bullish":
+            long_score += len(ma_near) * 0.5
+        else:
+            short_score += len(ma_near) * 0.5
+    
+    # Generar sugerencia basada en puntuación
+    current_price = get_latest_price(symbol, "1m")
+    suggestion = ""
+    
+    # Umbral mínimo para generar sugerencia: 3 puntos
+    if long_score > short_score and long_score >= 3:
+        suggestion = f"🔔 SUGERENCIA: LONG ({long_score:.1f}/5)"
+    elif short_score > long_score and short_score >= 3:
+        suggestion = f"🔔 SUGERENCIA: SHORT ({short_score:.1f}/5)"
+    
+    return suggestion
+
 def main():
     while True:
         for symbol in SYMBOLS:
@@ -221,8 +282,8 @@ def main():
             support = resistance = None
             trend_ref = None
             elliott_signals = []
-            breakout_list = []
-            impulse_list = []
+            breakout_list = []  # Almacena tuplas (tf, level_type, level_value)
+            impulse_list = []   # Almacena tuplas (tf, direction)
 
             for tf in TIMEFRAMES:
                 klines = get_klines(symbol, tf, 100)
@@ -245,7 +306,7 @@ def main():
                     if is_narrow_range(klines):
                         narrow_list.append(tf)
 
-                    if tf in ["5m", "15m", "30m"] and has_high_volume(klines[-1], klines[-6:-1]):
+                    if tf in ["5m", "15m"] and has_high_volume(klines[-1], klines[-6:-1]):
                         volume_list.append(tf)
 
                     if tf == "5m" and is_low_spread(klines[-1]):
@@ -268,27 +329,48 @@ def main():
                         if signal:
                             elliott_signals.append(f"{signal} ({tf})")
 
-                    # Detectar rupturas en ambas direcciones
-                    breakout_detected, level_type, level_value = is_breakout(klines, trend_ref, VOLUME_MULTIPLIER)
+                    # Detectar rupturas
+                    breakout_detected, level_type, level_value = is_breakout(klines, trend_ref)
                     if breakout_detected:
-                        breakout_list.append(f"{tf} ({level_type} {level_value:.2f})")
+                        breakout_list.append((tf, level_type, level_value))
 
-                    # Detectar velas de impulso en ambas direcciones
+                    # Detectar velas de impulso
                     if len(klines) >= 6:
                         recent_klines = klines[-6:-1]
-                        impulse_detected, direction = is_impulse(klines[-1], recent_klines, trend_ref, VOLUME_MULTIPLIER)
+                        impulse_detected, direction = is_impulse(klines[-1], recent_klines, trend_ref)
                         if impulse_detected:
-                            impulse_list.append(f"{tf} ({direction})")
+                            impulse_list.append((tf, direction))
 
-            if all(t == trend_ref for t in all_trends) and any([retrace, (ma_near) >=3,doji_list, volume_list, breakout_list, impulse_list]) :
+            # Verificar si hay señales relevantes
+            if all(t == trend_ref for t in all_trends) and any([
+                retrace, ma_near, doji_list, volume_list, 
+                breakout_list, impulse_list, elliott_signals
+            ]):
                 msg = format_msg(
                     symbol, trend_ref, ma_near, retrace,
                     doji_list, narrow_list, volume_list,
                     low_spread, support, resistance, 
-                    elliott_signals, breakout_list, impulse_list
+                    elliott_signals, 
+                    [f"{tf} ({level_type} {level_value:.2f})" for tf, level_type, level_value in breakout_list],
+                    [f"{tf} ({direction})" for tf, direction in impulse_list]
                 )
                 print(datetime.now(), "price->", get_latest_price(symbol, "1m"))
                 print(msg)
+                
+                # Generar sugerencia de trading
+                suggestion = generate_trading_suggestion(
+                    trend_ref, 
+                    breakout_list, 
+                    impulse_list,
+                    retrace,
+                    elliott_signals,
+                    ma_near,
+                    symbol
+                )
+                
+                if suggestion:
+                    print(suggestion)
+                
                 print("")
         print("#" * 80)
         print()
